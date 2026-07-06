@@ -3,20 +3,38 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.signal import lfilter
 
-def generate_frit_reference_with_delay(y_out, target_ph, omega, base_dt, delay_steps):
+def generate_frit_reference_with_delay(y_out, target_ph, omega, base_dt, delay_steps, zeta=1.0):
     """
-    建立帶有死區時間(Dead Time)的理想閉迴路二階參考軌跡
+    建立帶有死區時間(Dead Time)的理想閉迴路二階參考軌跡 (FRIT 正確數學逆模型版本)
+    r(k) = M^{-1}(z) * y_out(k)
     """
-    A = np.array([1.0, -2.0, 1.0])
-    B = np.array([omega**2 * base_dt**2, 2 * omega**2 * base_dt**2, omega**2 * base_dt**2])
-    rf_pure = lfilter(A, B, y_out) + target_ph
-    
+    # 預防性安全檢查
+    if omega <= 0 or base_dt <= 0:
+        return np.full_like(y_out, target_ph)
+
+    w_dt = omega * base_dt
+    w2_dt2 = w_dt ** 2
+
+    # 正確推導的 FIR 濾波器係數
+    b0 = 1.0 / w2_dt2 + 2.0 * zeta / w_dt + 1.0
+    b1 = -2.0 / w2_dt2 - 2.0 * zeta / w_dt
+    b2 = 1.0 / w2_dt2
+
+    b = np.array([b0, b1, b2])
+    a = np.array([1.0])  # 絕對穩定的 FIR 結構
+
+    # 透過正確的逆模型計算虛擬參考信號 (不再需要盲目加上 target_ph)
+    rf_pure = lfilter(b, a, y_out)
+
     # 塞入 Dead Time 修正：將理想軌跡整體向後平移 delay_steps
     if delay_steps > 0:
         rf_delayed = np.zeros_like(rf_pure)
         rf_delayed[delay_steps:] = rf_pure[:-delay_steps]
-        rf_delayed[:delay_steps] = target_ph
+        
+        # 在死區時間內，製程尚未反應，虛擬參考信號應維持在初始量測狀態（或理想起點）
+        rf_delayed[:delay_steps] = y_out[0]
         return rf_delayed
+        
     return rf_pure
 
 def dual_pid_gain_scheduled_sim(params, y_out, ph_in, flow_in, base_dt, delay_steps):
