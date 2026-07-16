@@ -3,6 +3,7 @@ import numpy as np
 import control as ct
 from scipy import signal
 import matplotlib.pyplot as plt
+from scipy.optimize import lsq_linear
 
 
 def calculate_virtual_signals(y, tau, Ts):
@@ -24,7 +25,7 @@ def calculate_virtual_signals(y, tau, Ts):
         rv[-shift:] = rv_delayed[:shift]
         rv[:-shift] = rv_delayed[0]
     else:
-        rv = rv_delayed 
+        rv = rv_delayed
     ev = rv - y
     return rv, ev
 
@@ -51,14 +52,10 @@ def apply_data_filter(u, phi, tau, Ts):
     return uf, phi_f
 
 def calculate_optimal_pid(uf, phi_f):
-    Uf = np.asarray(uf).reshape(-1, 1)
-    Phi_f = np.asarray(phi_f)
-    theta_opt = np.linalg.inv(Phi_f.T @ Phi_f) @ Phi_f.T @ Uf
-    
-    kp = theta_opt[0, 0]
-    ki = theta_opt[1, 0]
-    kd = theta_opt[2, 0]
-    return kp, ki, kd
+    uf_flat = np.asarray(uf).ravel()
+    phi_f_matrix = np.asarray(phi_f)
+    result = lsq_linear(phi_f_matrix, uf_flat, bounds=(0, 10))
+    return tuple(result.x)
 
 def vrft_pid_pipeline(u, y, tau, Ts):
     rv, ev = calculate_virtual_signals(y, tau, Ts)
