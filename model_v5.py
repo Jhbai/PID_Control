@@ -130,6 +130,80 @@ def vrft_pid_tuning(ph_trg, acid_rate, base_rate):
     
     return res_a.x.tolist() + res_b.x.tolist()
 
+
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+def build_model(ph, ac, bs):
+  ph_array = np.array(ph)
+  ac_array = np.array(ac)
+  bs_array = np.array(bs)
+  X = np.column_stack((ph_array[:-1], ac_array[:-1], bs_array[:-1]))
+  y = ph_array[1:]
+  model = LinearRegression()
+  model.fit(X, y)
+  return model
+
+import numpy as np
+from itertools import product
+
+def grid_search_itae(ph, ac, bs, pid_paras, set_points, ph_init, sim_steps=600):
+    best_itae = float('inf')
+    best_params = (None, None)
+    model = build_model(ph, ac, bs)
+    kap, kai, kad, kbp, kbi, kbd = pid_paras
+    Kp_a, Ki_a, Kd_a = kap, kai, kad
+    Kp_b, Ki_b, Kd_b = kbp, kbi, kbd
+    
+    for ct, hl in product(range(10, 16), range(30, 61)):
+        ph = ph_init
+        integral_a = 0.0
+        integral_b = 0.0
+        prev_e_a = 0.0
+        prev_e_b = 0.0
+        itae = 0.0
+        
+        on_time_ac = 0
+        on_time_bs = 0
+        
+        for t in range(sim_steps):
+            e_a = max(ph - set_points[0], 0)
+            e_b = max(set_points[1] - ph, 0)
+            
+            if t % ct == 0:
+                de_a = (e_a - prev_e_a) / ct if t > 0 else 0.0
+                u_a = Kp_a * e_a + Ki_a * integral_a + Kd_a * de_a
+                u_actual_a = min(max(u_a, 0), hl)
+                on_time_ac = int((u_actual_a / 100.0) * ct)
+                if u_a <= hl:
+                    integral_a += e_a * ct
+                prev_e_a = e_a
+                
+                de_b = (e_b - prev_e_b) / ct if t > 0 else 0.0
+                u_b = Kp_b * e_b + Ki_b * integral_b + Kd_b * de_b
+                u_actual_b = min(max(u_b, 0), hl)
+                on_time_bs = int((u_actual_b / 100.0) * ct)
+                if u_b <= hl:
+                    integral_b += e_b * ct
+                prev_e_b = e_b
+
+            ac_val = 5.0 if (t % ct) < on_time_ac else 0.0
+            bs_val = 5.0 if (t % ct) < on_time_bs else 0.0
+            
+            ph = (model.coef_[0] * ph + 
+                  model.coef_[1] * ac_val + 
+                  model.coef_[2] * bs_val + 
+                  model.intercept_)
+            
+            itae += t * abs(ph - (set_points[0] + set_points[1])/2)
+            
+        if itae < best_itae:
+            best_itae = itae
+            best_params = (ct, hl)
+            
+    return best_params, best_itae
+
+
 ph, ac, bs = generate_ph_control_series()
 fig, ax = plt.subplots(3, 1, figsize=(24, 9))
 ax[0].plot(ph, color="black")
@@ -140,3 +214,6 @@ for a in ax:
 plt.show()
 tuned_params = vrft_pid_tuning(ph, ac, bs)
 print(tuned_params)
+grid_search_itae(ph, ac, bs, 
+         tuned_params, 
+         (6.5, 6.0), ph[0])
