@@ -1,5 +1,6 @@
 import control as ct
 import numpy as np
+# ----- Mock Data ----- #
 
 def generate_ph_control_series():
     N = 3000
@@ -59,8 +60,7 @@ def generate_ph_control_series():
         
     return ph_trg, acid_rate, base_rate
 
-import numpy as np
-from scipy.optimize import lsq_linear
+# ----- Control ----- #
 
 import numpy as np
 from scipy.optimize import lsq_linear
